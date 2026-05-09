@@ -5,6 +5,7 @@ import pandas as pd
 from matplotlib.patches import Patch
 import matplotlib.pyplot as plt
 from plot_style import set_plot_style
+
 set_plot_style()
 
 
@@ -92,51 +93,74 @@ print(df2.to_string(index=False))
 ###############################################
 
 fig, axes = plt.subplots(1, 2, figsize=(18, 7))
-fig.suptitle('NBA Team Leading Scorers (2000-Present)', fontsize=18)
+fig.suptitle("NBA Team Leading Scorers (2000-Present)", fontsize=18)
 
-# Top 20 leading scorers 
-bar_colors = ['crimson' if year >= '2020' else 'dodgerblue' for year in df['season_year']]
+# Top 20 leading scorers
+bar_colors = [
+    "crimson" if year >= "2020" else "dodgerblue" for year in df["season_year"]
+]
 
 axes[0].barh(
-    df['player_name'] + ' (' + df['season_year'] + ')',
-    df['avg_points'],
+    df["player_name"] + " (" + df["season_year"] + ")",
+    df["avg_points"],
     color=bar_colors,
-    edgecolor='k', linewidth=0.8
+    edgecolor="k",
+    linewidth=0.8,
 )
 
-for bar, val in zip(axes[0].patches, df['avg_points']):
-    axes[0].text(val + 0.2, bar.get_y() + bar.get_height() / 2, f'{val}', va='center', fontsize=12, fontweight='bold')
+for bar, val in zip(axes[0].patches, df["avg_points"]):
+    axes[0].text(
+        val + 0.2,
+        bar.get_y() + bar.get_height() / 2,
+        f"{val}",
+        va="center",
+        fontsize=12,
+        fontweight="bold",
+    )
 
-axes[0].set_xlabel('Avg Points Per Game')
-axes[0].set_title('Top 20 Team Leading Scorers')
+axes[0].set_xlabel("Avg Points Per Game")
+axes[0].set_title("Top 20 Team Leading Scorers")
 axes[0].invert_yaxis()
-axes[0].set_xlim(0, df['avg_points'].max() + 8)
-axes[0].spines['top'].set_visible(False)
-axes[0].spines['right'].set_visible(False)
+axes[0].set_xlim(0, df["avg_points"].max() + 8)
+axes[0].spines["top"].set_visible(False)
+axes[0].spines["right"].set_visible(False)
 axes[0].grid(False)
 
 legend = [
-    Patch(color='dodgerblue', label='2000-2019'),
-    Patch(color='crimson', label='2020-present')
+    Patch(color="dodgerblue", label="2000-2019"),
+    Patch(color="crimson", label="2020-present"),
 ]
 
-axes[0].legend(handles=legend, fontsize=10, ncol=2, loc='upper left')
+axes[0].legend(handles=legend, fontsize=10, ncol=2, loc="upper left")
 
 
-axes[1].barh( df2['player_name'], df2['times_led_team'], color='dodgerblue', edgecolor='k', linewidth=0.8)
+axes[1].barh(
+    df2["player_name"],
+    df2["times_led_team"],
+    color="dodgerblue",
+    edgecolor="k",
+    linewidth=0.8,
+)
 
-for bar, val in zip(axes[1].patches, df2['times_led_team']):
-    axes[1].text(val + 0.05, bar.get_y() + bar.get_height() / 2, str(val), va='center', fontsize=12, fontweight='bold')
-    
-axes[1].tick_params(axis='y', labelsize=12)
-axes[1].set_xlabel('Number of Seasons as Team\'s Top Scorer')
-axes[1].set_title(r'Most Seasons Leading Team ($\geq$7) in Scoring')
+for bar, val in zip(axes[1].patches, df2["times_led_team"]):
+    axes[1].text(
+        val + 0.05,
+        bar.get_y() + bar.get_height() / 2,
+        str(val),
+        va="center",
+        fontsize=12,
+        fontweight="bold",
+    )
+
+axes[1].tick_params(axis="y", labelsize=12)
+axes[1].set_xlabel("Number of Seasons as Team's Top Scorer")
+axes[1].set_title(r"Most Seasons Leading Team ($\geq$7) in Scoring")
 axes[1].invert_yaxis()
-axes[1].set_xlim(0, df2['times_led_team'].max() + 2)
-axes[1].spines['top'].set_visible(False)
-axes[1].spines['right'].set_visible(False)
+axes[1].set_xlim(0, df2["times_led_team"].max() + 2)
+axes[1].spines["top"].set_visible(False)
+axes[1].spines["right"].set_visible(False)
 axes[1].grid(False)
 
 plt.tight_layout()
-plt.savefig('Figures/player_rankings.png', dpi=150)
+plt.savefig("Figures/player_rankings.png", dpi=150)
 plt.show()
