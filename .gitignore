@@ -1,3 +1,4 @@
 data/PlayerStatistics.csv
 data/PlayByPlay.parquet
 nba.db
+data/
