@@ -1,9 +1,4 @@
 data/PlayerStatistics.csv
 data/PlayByPlay.parquet
-data/Players.csv
-data/Seasons.csv
-data/Teams.csv
-data/TeamStatistics.csv
-data/TeamSeasons.csv
 # nba.db
 nba.db
