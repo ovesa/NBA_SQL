@@ -5,12 +5,28 @@
 # Created show results on a dashboard with interactive charts using Plotly and Dash
 ###################################################################################
 
-import sqlite3
+import os
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
+from sqlalchemy import create_engine, text
 from dash import Dash, dcc, html, Input, Output
-import os
+
+###################################################################################
+# Database connection
+# Set locally before running:
+#   export DATABASE_URL="postgresql://postgres:PASSWORD@db.uxnwsbjwmilzmffiaccb.supabase.co:5432/postgres"
+# On Plotly Cloud: add DATABASE_URL in the app's Environment Variables section
+###################################################################################
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is not set.")
+
+engine = create_engine(DATABASE_URL)
+
+def run_query(q):
+    with engine.connect() as conn:
+        return pd.read_sql(text(q), conn)
 
 ###################################################################################
 
@@ -23,100 +39,87 @@ color_green = "forestgreen"
 color_purple = "purple"
 
 ###################################################################################
-############################# Set up Dash & Load Data #############################
-###################################################################################
+############################# Load Data ###########################################
 
-app = Dash(__name__, title="NBA Analytics Dashboard")
-
-# Load data
-db_path = os.path.join(os.path.dirname(__file__), "nba.db")
-
-def get_conn():
-    return sqlite3.connect(db_path)
-
-# grabbed queries from other files and wrapped in functions to load into dataframes on app start
 def load_top_scorers():
     q = """
     SELECT
-        ps.firstName || ' ' || ps.lastName AS player_name,
-        SUBSTR(ps.gameDateTimeEst, 1, 4) AS season_year,
-        COUNT(ps.gameId) AS games_played,
-        ROUND(AVG(ps.points), 1) AS avg_points,
-        ROUND(AVG(ps.points) / NULLIF(AVG(ps.numMinutes), 0), 2) AS points_per_minute,
-        p.heightInches AS height_inches,
-        p.bodyWeightLbs AS weight_lbs
-    FROM PlayerStatistics ps
-    JOIN Players p ON ps.personId = p.personId
-    WHERE ps.gameType = 'Regular Season'
+        ps."firstName" || ' ' || ps."lastName" AS player_name,
+        LEFT(ps."gameDateTimeEst", 4) AS season_year,
+        COUNT(ps."gameId") AS games_played,
+        ROUND(AVG(ps.points)::numeric, 1) AS avg_points,
+        ROUND((AVG(ps.points) / NULLIF(AVG(ps."numMinutes"), 0))::numeric, 2) AS points_per_minute,
+        p."heightInches" AS height_inches,
+        p."bodyWeightLbs" AS weight_lbs
+    FROM "PlayerStatistics" ps
+    JOIN "Players" p ON ps."personId" = p."personId"
+    WHERE ps."gameType" = 'Regular Season'
       AND ps.points IS NOT NULL
-      AND ps.numMinutes IS NOT NULL
-      AND SUBSTR(ps.gameDateTimeEst, 1, 4) >= '2000'
-    GROUP BY player_name, season_year, p.heightInches, p.bodyWeightLbs
-    HAVING games_played >= 20
+      AND ps."numMinutes" IS NOT NULL
+      AND LEFT(ps."gameDateTimeEst", 4) >= '2000'
+    GROUP BY player_name, season_year, p."heightInches", p."bodyWeightLbs"
+    HAVING COUNT(ps."gameId") >= 20
     ORDER BY avg_points DESC
     LIMIT 10
     """
-    with get_conn() as conn:
-        return pd.read_sql_query(q, conn)
+    return run_query(q)
 
 
 def load_all_top_scorers():
     q = """
     SELECT
-        ps.firstName || ' ' || ps.lastName AS player_name,
-        SUBSTR(ps.gameDateTimeEst, 1, 4) AS season_year,
-        COUNT(ps.gameId) AS games_played,
-        ROUND(AVG(ps.points), 1) AS avg_points,
-        ROUND(AVG(ps.points) / NULLIF(AVG(ps.numMinutes), 0), 2) AS points_per_minute,
-        p.heightInches AS height_inches,
-        p.bodyWeightLbs AS weight_lbs
-    FROM PlayerStatistics ps
-    JOIN Players p ON ps.personId = p.personId
-    WHERE ps.gameType = 'Regular Season'
+        ps."firstName" || ' ' || ps."lastName" AS player_name,
+        LEFT(ps."gameDateTimeEst", 4) AS season_year,
+        COUNT(ps."gameId") AS games_played,
+        ROUND(AVG(ps.points)::numeric, 1) AS avg_points,
+        ROUND((AVG(ps.points) / NULLIF(AVG(ps."numMinutes"), 0))::numeric, 2) AS points_per_minute,
+        p."heightInches" AS height_inches,
+        p."bodyWeightLbs" AS weight_lbs
+    FROM "PlayerStatistics" ps
+    JOIN "Players" p ON ps."personId" = p."personId"
+    WHERE ps."gameType" = 'Regular Season'
       AND ps.points IS NOT NULL
-      AND ps.numMinutes IS NOT NULL
-    GROUP BY player_name, season_year, p.heightInches, p.bodyWeightLbs
-    HAVING games_played >= 20
+      AND ps."numMinutes" IS NOT NULL
+    GROUP BY player_name, season_year, p."heightInches", p."bodyWeightLbs"
+    HAVING COUNT(ps."gameId") >= 20
     ORDER BY avg_points DESC
     """
-    with get_conn() as conn:
-        return pd.read_sql_query(q, conn)
+    return run_query(q)
 
 
 def load_team_win_rates():
     q = """
     SELECT
-        ts.teamName AS team_name,
-        SUBSTR(ts.gameDateTimeEst, 1, 4) AS season_year,
-        COUNT(ts.gameId) AS games_played,
-        COUNT(ts.gameId) - SUM(ts.win) AS losses,
+        ts."teamName" AS team_name,
+        LEFT(ts."gameDateTimeEst", 4) AS season_year,
+        COUNT(ts."gameId") AS games_played,
+        COUNT(ts."gameId") - SUM(ts.win) AS losses,
         SUM(ts.win) AS wins,
-        ROUND(SUM(ts.win) * 100.0 / COUNT(ts.gameId), 1) AS win_rate
-    FROM TeamStatistics ts
-    JOIN Games g ON ts.gameId = g.gameId
-      AND g.gameType = 'Regular Season'
-      AND SUBSTR(ts.gameDateTimeEst, 1, 4) >= '2000'
+        ROUND((SUM(ts.win) * 100.0 / COUNT(ts."gameId"))::numeric, 1) AS win_rate
+    FROM "TeamStatistics" ts
+    JOIN "Games" g ON ts."gameId" = g."gameId"
+      AND g."gameType" = 'Regular Season'
+      AND LEFT(ts."gameDateTimeEst", 4) >= '2000'
     GROUP BY team_name, season_year
-    HAVING games_played >= 20
+    HAVING COUNT(ts."gameId") >= 20
     ORDER BY season_year, win_rate DESC
     """
-    with get_conn() as conn:
-        return pd.read_sql_query(q, conn)
+    return run_query(q)
 
 
 def load_player_rankings():
     q1 = """
     WITH seasonal_averages AS (
         SELECT
-            ps.firstName || ' ' || ps.lastName AS player_name,
-            ps.playerteamCity || ' ' || ps.playerteamName AS team_name,
-            SUBSTR(ps.gameDateTimeEst, 1, 4) AS season_year,
-            COUNT(ps.gameId) AS games_played,
-            ROUND(AVG(ps.points), 1) AS avg_points
-        FROM PlayerStatistics ps
-        WHERE ps.gameType = 'Regular Season' AND ps.points IS NOT NULL
+            ps."firstName" || ' ' || ps."lastName" AS player_name,
+            ps."playerteamCity" || ' ' || ps."playerteamName" AS team_name,
+            LEFT(ps."gameDateTimeEst", 4) AS season_year,
+            COUNT(ps."gameId") AS games_played,
+            ROUND(AVG(ps.points)::numeric, 1) AS avg_points
+        FROM "PlayerStatistics" ps
+        WHERE ps."gameType" = 'Regular Season' AND ps.points IS NOT NULL
         GROUP BY player_name, team_name, season_year
-        HAVING games_played >= 20
+        HAVING COUNT(ps."gameId") >= 20
     ),
     ranked AS (
         SELECT *,
@@ -131,15 +134,15 @@ def load_player_rankings():
     q2 = """
     WITH seasonal_averages AS (
         SELECT
-            ps.firstName || ' ' || ps.lastName AS player_name,
-            ps.playerteamCity || ' ' || ps.playerteamName AS team_name,
-            SUBSTR(ps.gameDateTimeEst, 1, 4) AS season_year,
-            COUNT(ps.gameId) AS games_played,
-            ROUND(AVG(ps.points), 1) AS avg_points
-        FROM PlayerStatistics ps
-        WHERE ps.gameType = 'Regular Season' AND ps.points IS NOT NULL
+            ps."firstName" || ' ' || ps."lastName" AS player_name,
+            ps."playerteamCity" || ' ' || ps."playerteamName" AS team_name,
+            LEFT(ps."gameDateTimeEst", 4) AS season_year,
+            COUNT(ps."gameId") AS games_played,
+            ROUND(AVG(ps.points)::numeric, 1) AS avg_points
+        FROM "PlayerStatistics" ps
+        WHERE ps."gameType" = 'Regular Season' AND ps.points IS NOT NULL
         GROUP BY player_name, team_name, season_year
-        HAVING games_played >= 20
+        HAVING COUNT(ps."gameId") >= 20
     ),
     ranked AS (
         SELECT *,
@@ -150,25 +153,24 @@ def load_player_rankings():
     FROM ranked
     WHERE scoring_rank = 1 AND season_year >= '2000'
     GROUP BY player_name
-    HAVING times_led_team >= 7
+    HAVING COUNT(*) >= 7
     ORDER BY times_led_team DESC
     """
-    with get_conn() as conn:
-        return pd.read_sql_query(q1, conn), pd.read_sql_query(q2, conn)
+    return run_query(q1), run_query(q2)
 
 
 def load_most_improved():
     q = """
     WITH seasonal_averages AS (
         SELECT
-            ps.firstName || ' ' || ps.lastName AS player_name,
-            SUBSTR(ps.gameDateTimeEst, 1, 4) AS season_year,
-            COUNT(ps.gameId) AS games_played,
-            ROUND(AVG(ps.points), 1) AS avg_points
-        FROM PlayerStatistics ps
-        WHERE ps.gameType = 'Regular Season' AND ps.points IS NOT NULL
+            ps."firstName" || ' ' || ps."lastName" AS player_name,
+            LEFT(ps."gameDateTimeEst", 4) AS season_year,
+            COUNT(ps."gameId") AS games_played,
+            ROUND(AVG(ps.points)::numeric, 1) AS avg_points
+        FROM "PlayerStatistics" ps
+        WHERE ps."gameType" = 'Regular Season' AND ps.points IS NOT NULL
         GROUP BY player_name, season_year
-        HAVING games_played >= 20
+        HAVING COUNT(ps."gameId") >= 20
     ),
     with_previous AS (
         SELECT
@@ -180,8 +182,8 @@ def load_most_improved():
     improvement AS (
         SELECT
             player_name, season_year, avg_points, prev_avg_points, next_avg_points,
-            ROUND(avg_points - prev_avg_points, 1) AS points_improvement,
-            ROUND((avg_points - prev_avg_points) / prev_avg_points * 100, 1) AS pct_improvement,
+            ROUND((avg_points - prev_avg_points)::numeric, 1) AS points_improvement,
+            ROUND(((avg_points - prev_avg_points) / prev_avg_points * 100)::numeric, 1) AS pct_improvement,
             CASE
                 WHEN next_avg_points >= avg_points * 0.9 THEN 'Sustained'
                 WHEN next_avg_points IS NULL THEN 'Unknown'
@@ -195,28 +197,27 @@ def load_most_improved():
     ORDER BY points_improvement DESC
     LIMIT 20
     """
-    with get_conn() as conn:
-        return pd.read_sql_query(q, conn)
+    return run_query(q)
 
 
 def load_team_efficiency():
     q = """
     WITH team_efficiency AS (
         SELECT
-            ts.teamCity || ' ' || ts.teamName AS team_name,
-            SUBSTR(ts.gameDateTimeEst, 1, 4) AS season_year,
-            COUNT(ts.gameID) AS games_played,
-            ROUND(AVG(ts.teamScore), 1) AS avg_points_scored,
-            ROUND(AVG(ts.opponentScore), 1) AS avg_points_allowed,
-            ROUND(AVG(ts.teamScore - ts.opponentScore), 1) AS avg_point_diff,
-            ROUND(SUM(ts.win) * 100.0 / COUNT(ts.gameID), 1) AS win_rate,
-            ROUND(AVG(ts.assists), 1) AS avg_assists
-        FROM TeamStatistics ts
-        JOIN Games g ON ts.gameID = g.gameID
-        WHERE g.gameType = 'Regular Season'
-          AND SUBSTR(ts.gameDateTimeEst, 1, 4) = '2026'
+            ts."teamCity" || ' ' || ts."teamName" AS team_name,
+            LEFT(ts."gameDateTimeEst", 4) AS season_year,
+            COUNT(ts."gameId") AS games_played,
+            ROUND(AVG(ts."teamScore")::numeric, 1) AS avg_points_scored,
+            ROUND(AVG(ts."opponentScore")::numeric, 1) AS avg_points_allowed,
+            ROUND(AVG(ts."teamScore" - ts."opponentScore")::numeric, 1) AS avg_point_diff,
+            ROUND((SUM(ts.win) * 100.0 / COUNT(ts."gameId"))::numeric, 1) AS win_rate,
+            ROUND(AVG(ts.assists)::numeric, 1) AS avg_assists
+        FROM "TeamStatistics" ts
+        JOIN "Games" g ON ts."gameId" = g."gameId"
+        WHERE g."gameType" = 'Regular Season'
+          AND LEFT(ts."gameDateTimeEst", 4) = '2026'
         GROUP BY team_name, season_year
-        HAVING games_played >= 40
+        HAVING COUNT(ts."gameId") >= 40
     ),
     ranked AS (
         SELECT *, RANK() OVER (ORDER BY avg_point_diff DESC) AS efficiency_rank
@@ -224,54 +225,54 @@ def load_team_efficiency():
     )
     SELECT * FROM ranked ORDER BY efficiency_rank
     """
-    with get_conn() as conn:
-        return pd.read_sql_query(q, conn)
+    return run_query(q)
 
 
 def load_blowouts():
     q = """
     SELECT
-        g.gameId,
-        SUBSTR(g.gameDateTimeEst, 1, 4) AS season_year,
-        SUBSTR(g.gameDateTimeEst, 1, 10) AS game_date,
-        g.hometeamCity || ' ' || g.hometeamName AS home_team,
-        g.awayteamCity || ' ' || g.awayteamName AS away_team,
-        g.homeScore, g.awayScore,
-        ABS(g.homeScore - g.awayScore) AS margin,
-        CASE WHEN g.homeScore > g.awayScore THEN g.hometeamCity || ' ' || g.hometeamName
-             ELSE g.awayteamCity || ' ' || g.awayteamName END AS winning_team,
-        CASE WHEN g.homeScore > g.awayScore THEN g.awayteamCity || ' ' || g.awayteamName
-             ELSE g.hometeamCity || ' ' || g.hometeamName END AS losing_team,
-        CASE WHEN g.homeScore > g.awayScore THEN g.homeScore ELSE g.awayScore END AS winning_score,
-        CASE WHEN g.homeScore > g.awayScore THEN g.awayScore ELSE g.homeScore END AS losing_score,
+        g."gameId",
+        LEFT(g."gameDateTimeEst", 4) AS season_year,
+        LEFT(g."gameDateTimeEst", 10) AS game_date,
+        g."hometeamCity" || ' ' || g."hometeamName" AS home_team,
+        g."awayteamCity" || ' ' || g."awayteamName" AS away_team,
+        g."homeScore", g."awayScore",
+        ABS(g."homeScore" - g."awayScore") AS margin,
+        CASE WHEN g."homeScore" > g."awayScore"
+            THEN g."hometeamCity" || ' ' || g."hometeamName"
+            ELSE g."awayteamCity" || ' ' || g."awayteamName" END AS winning_team,
+        CASE WHEN g."homeScore" > g."awayScore"
+            THEN g."awayteamCity" || ' ' || g."awayteamName"
+            ELSE g."hometeamCity" || ' ' || g."hometeamName" END AS losing_team,
+        CASE WHEN g."homeScore" > g."awayScore" THEN g."homeScore" ELSE g."awayScore" END AS winning_score,
+        CASE WHEN g."homeScore" > g."awayScore" THEN g."awayScore" ELSE g."homeScore" END AS losing_score,
         CASE
-            WHEN SUBSTR(g.gameDateTimeEst,1,4) < '1980' THEN '1970s'
-            WHEN SUBSTR(g.gameDateTimeEst,1,4) < '1990' THEN '1980s'
-            WHEN SUBSTR(g.gameDateTimeEst,1,4) < '2000' THEN '1990s'
-            WHEN SUBSTR(g.gameDateTimeEst,1,4) < '2010' THEN '2000s'
-            WHEN SUBSTR(g.gameDateTimeEst,1,4) < '2020' THEN '2010s'
+            WHEN LEFT(g."gameDateTimeEst", 4) < '1980' THEN '1970s'
+            WHEN LEFT(g."gameDateTimeEst", 4) < '1990' THEN '1980s'
+            WHEN LEFT(g."gameDateTimeEst", 4) < '2000' THEN '1990s'
+            WHEN LEFT(g."gameDateTimeEst", 4) < '2010' THEN '2000s'
+            WHEN LEFT(g."gameDateTimeEst", 4) < '2020' THEN '2010s'
             ELSE '2020s'
         END AS decade
-    FROM Games g
-    WHERE g.gameType = 'Regular Season'
-      AND g.homeScore IS NOT NULL AND g.awayScore IS NOT NULL
-      AND g.homeScore > 0 AND g.awayScore > 0
-      AND SUBSTR(g.gameDateTimeEst,1,4) >= '1970'
+    FROM "Games" g
+    WHERE g."gameType" = 'Regular Season'
+      AND g."homeScore" IS NOT NULL AND g."awayScore" IS NOT NULL
+      AND g."homeScore" > 0 AND g."awayScore" > 0
+      AND LEFT(g."gameDateTimeEst", 4) >= '1970'
     ORDER BY margin DESC
     LIMIT 20
     """
-    with get_conn() as conn:
-        return pd.read_sql_query(q, conn)
+    return run_query(q)
 
 
 # Pre-load all dataframes
-df_top = load_top_scorers()
-df_all = load_all_top_scorers()
-df_win = load_team_win_rates()
+df_top   = load_top_scorers()
+df_all   = load_all_top_scorers()
+df_win   = load_team_win_rates()
 df_lead, df_consist = load_player_rankings()
-df_imp = load_most_improved()
-df_eff = load_team_efficiency()
-df_blow = load_blowouts()
+df_imp   = load_most_improved()
+df_eff   = load_team_efficiency()
+df_blow  = load_blowouts()
 
 # Physical trait bins from df_all
 df_clean = df_all.dropna(subset=["height_inches", "weight_lbs"]).copy()
@@ -281,10 +282,10 @@ df_clean["weight_bin"] = pd.cut(df_clean["weight_lbs"], bins=range(140, 340, 20)
     labels=[f"{w}–{w+19}" for w in range(140, 320, 20)])
 
 height_grouped = df_clean.groupby("height_bin", observed=True)["avg_points"].mean().round(1)
-height_counts = df_clean.groupby("height_bin", observed=True)["avg_points"].count()
+height_counts  = df_clean.groupby("height_bin", observed=True)["avg_points"].count()
 weight_grouped = df_clean.groupby("weight_bin", observed=True)["avg_points"].mean().round(1)
-weight_counts = df_clean.groupby("weight_bin", observed=True)["avg_points"].count()
-ppm_grouped = df_clean.groupby("height_bin", observed=True)["points_per_minute"].mean().round(3)
+weight_counts  = df_clean.groupby("weight_bin", observed=True)["avg_points"].count()
+ppm_grouped    = df_clean.groupby("height_bin", observed=True)["points_per_minute"].mean().round(3)
 
 # win-rate trend teams
 trend_teams = ["Lakers", "Celtics", "Warriors", "Spurs", "Bulls"]
@@ -302,8 +303,8 @@ layout = dict(
     plot_bgcolor="rgba(0,0,0,0)",
     font_family="system-ui, sans-serif",
     font_color="black",
-    font_size=14,           
-    title_font_size=18,     
+    font_size=14,
+    title_font_size=18,
     margin=dict(l=10, r=10, t=50, b=10),
 )
 
@@ -312,7 +313,6 @@ def axis_style(**kwargs):
                 linecolor="#ccc", tickcolor="#ccc", tickfont_size=14, **kwargs)
 
 def findings_box(text):
-    """Reusable grey key findings box shown below charts on every tab."""
     return html.Div(
         html.P(text, style={"margin": 0, "color": "black", "fontSize": 16, "lineHeight": "1.6"}),
         style={
@@ -326,22 +326,25 @@ def findings_box(text):
 
 tab_style = {"padding": "10px 18px", "fontFamily": "system-ui, sans-serif",
              "fontSize": 16, "color": "black"}
-
 tab_selected = {**tab_style, "borderTop": "2px solid #1f77b4",
                 "color": "dodgerblue", "fontWeight": "500"}
 
+###################################################################################
+################################## App Layout #####################################
+###################################################################################
+
+app = Dash(__name__, title="NBA Analytics Dashboard")
+
 app.layout = html.Div([
 
-    # Header
     html.Div([
         html.H1("NBA Historical Analytics", style={
             "margin": 0, "fontSize": 28, "fontWeight": 500, "color": "black"
         }),
-        html.P("SQL + Python · SQLite · 22,000+ player-seasons · 1947-2026",
+        html.P("SQL + Python · PostgreSQL · 22,000+ player-seasons · 1947–2026",
                style={"margin": "4px 0 0", "color": "gray", "fontSize": 16}),
     ], style={"padding": "24px 32px 16px", "borderBottom": "1px solid #eee"}),
 
-    # Tabs
     dcc.Tabs(id="tabs", value="tab1", children=[
         dcc.Tab(label="Top Scorers",           value="tab1", style=tab_style, selected_style=tab_selected),
         dcc.Tab(label="Physical Traits",       value="tab2", style=tab_style, selected_style=tab_selected),
@@ -387,13 +390,11 @@ def tab1_layout():
         hovertemplate="<b>%{y}</b><br>Avg PPG: %{x}<extra></extra>",
         showlegend=False,
     ))
-    
     fig1.update_layout(**layout, title="Top 10 Highest Scoring Player-Seasons Since 2000",
                        yaxis=dict(autorange="reversed", **axis_style()),
                        xaxis=dict(title="Average Points Per Game", **axis_style()),
                        legend=dict(x=1.02, y=1, xanchor="left", yanchor="top", font=dict(size=16)),
                        height=420)
-    
     for era, color in {"2000-2019": color_blue, "2020-Present": color_red}.items():
         fig1.add_trace(go.Bar(x=[None], y=[None], marker_color=color, name=era, showlegend=True))
 
@@ -406,9 +407,8 @@ def tab1_layout():
         textfont_size=14,
         hovertemplate="<b>%{text}</b><br>PPM: %{x}<br>PPG: %{y}<extra></extra>",
     ))
-    
     fig2.update_layout(**layout, title="Volume vs Efficiency: PPG vs Points Per Minute",
-                       xaxis=dict(title="Points Per Minute", range=[0.7,1.1],**axis_style()),
+                       xaxis=dict(title="Points Per Minute", range=[0.7, 1.1], **axis_style()),
                        yaxis=dict(title="Avg Points Per Game", **axis_style()),
                        height=500)
 
@@ -420,20 +420,21 @@ def tab1_layout():
         textposition="top center", textfont_size=14,
         hovertemplate="<b>%{text}</b><br>Height: %{x} in<br>PPG: %{y}<extra></extra>",
     ))
-    
     fig3.update_layout(**layout, title="Scoring vs Height (top 10)",
                        xaxis=dict(title="Height (inches)", **axis_style()),
                        yaxis=dict(title="Avg PPG", **axis_style()),
                        height=500)
 
-        
     kpi_data = [
-        ("Highest Single-Season PPG", f"{df_top['avg_points'].max()}",  df_top.loc[df_top['avg_points'].idxmax(), 'player_name'] + " " + df_top.loc[df_top['avg_points'].idxmax(), 'season_year']),
-        ("Lowest of Top 10 PPG",      f"{df_top['avg_points'].min()}",  df_top.loc[df_top['avg_points'].idxmin(), 'player_name'] + " " + df_top.loc[df_top['avg_points'].idxmin(), 'season_year']),
-        ("Best Points Per Minute",       f"{df_top['points_per_minute'].max()}", df_top.loc[df_top['points_per_minute'].idxmax(), 'player_name']),
-        ("Height Range (top 10)",     f"{int(df_top['height_inches'].min())}-{int(df_top['height_inches'].max())} in", "across all top scorers"),
+        ("Highest Single-Season PPG", f"{df_top['avg_points'].max()}",
+         df_top.loc[df_top['avg_points'].idxmax(), 'player_name'] + " " + df_top.loc[df_top['avg_points'].idxmax(), 'season_year']),
+        ("Lowest of Top 10 PPG",      f"{df_top['avg_points'].min()}",
+         df_top.loc[df_top['avg_points'].idxmin(), 'player_name'] + " " + df_top.loc[df_top['avg_points'].idxmin(), 'season_year']),
+        ("Best Points Per Minute",    f"{df_top['points_per_minute'].max()}",
+         df_top.loc[df_top['points_per_minute'].idxmax(), 'player_name']),
+        ("Height Range (top 10)",     f"{int(df_top['height_inches'].min())}–{int(df_top['height_inches'].max())} in",
+         "across all top scorers"),
     ]
-
     kpi_row = html.Div([
         html.Div([
             html.P(label, style={"margin": "0 0 4px", "fontSize": 14, "color": "black"}),
@@ -452,10 +453,8 @@ def tab1_layout():
 
     return html.Div([
         kpi_row,
-        
         html.P("Who are the 10 highest-scoring player-seasons since 2000, and what traits do they share?",
                style={"color": "black", "marginBottom": 16, "fontWeight": "bold", "fontSize": 18}),
-        
         dcc.Graph(figure=fig1),
         html.Div([
             html.Div(dcc.Graph(figure=fig2, style={"height": "100%"}), style={"flex": "1"}),
@@ -485,7 +484,6 @@ def tab2_layout():
         customdata=[[height_counts[k]] for k in height_grouped.index],
         hovertemplate="Height: %{x}<br>Avg PPG: %{y}<br>n = %{customdata[0]}<extra></extra>",
     ))
-    
     fig1.update_layout(**layout, title="Avg Scoring by Height",
                        xaxis=dict(title="Height (inches)", tickangle=45, **axis_style()),
                        yaxis=dict(title="Avg PPG", range=[0, height_grouped.max() + 2], **axis_style()),
@@ -498,7 +496,6 @@ def tab2_layout():
         customdata=[[weight_counts[k]] for k in weight_grouped.index],
         hovertemplate="Weight: %{x}<br>Avg PPG: %{y}<br>n = %{customdata[0]}<extra></extra>",
     ))
-    
     fig2.update_layout(**layout, title="Avg Scoring by Weight",
                        xaxis=dict(title="Weight (lbs)", tickangle=45, **axis_style()),
                        yaxis=dict(title="Avg PPG", range=[0, weight_grouped.max() + 2], **axis_style()),
@@ -510,7 +507,6 @@ def tab2_layout():
         textfont_size=14,
         hovertemplate="Height: %{x}<br>Pts/Min: %{y}<extra></extra>",
     ))
-    
     fig3.update_layout(**layout, title="Scoring Efficiency (pts/min) by Height",
                        xaxis=dict(title="Height (inches)", tickangle=45, **axis_style()),
                        yaxis=dict(title="Avg Pts/Min", range=[0, ppm_grouped.max() + 0.1], **axis_style()),
@@ -534,6 +530,7 @@ def tab2_layout():
         ),
     ])
 
+
 ###################################################################################
 ############################# Tab 3: Team Win Rates ###############################
 ###################################################################################
@@ -548,7 +545,6 @@ def tab3_layout():
     top10["hover"] = top10["win_rate"].astype(str) + "% — " + top10["wins"].astype(str) + "W / " + top10["losses"].astype(str) + "L"
 
     fig1 = go.Figure()
-    
     fig1.add_trace(go.Bar(
         x=top10["wins"], y=top10["label"], orientation="h",
         name="Wins", marker_color=color_blue,
@@ -556,13 +552,11 @@ def tab3_layout():
         textfont_size=14,
         hovertemplate="<b>%{y}</b><br>%{text}<extra></extra>",
     ))
-    
     fig1.add_trace(go.Bar(
         x=top10["losses"], y=top10["label"], orientation="h",
         name="Losses", marker_color=color_red,
         hoverinfo="skip",
     ))
-    
     fig1.update_layout(**layout, barmode="stack",
                        title="Top 10 Best Single Seasons by Win Rate",
                        yaxis=dict(autorange="reversed", **axis_style()),
@@ -571,10 +565,8 @@ def tab3_layout():
                        height=600)
 
     fig2 = go.Figure()
-    
     for team in trend_teams:
         td = df[df["team_name"].str.contains(team)].sort_values("season_year")
-        
         fig2.add_trace(go.Scatter(
             x=td["season_year"], y=td["win_rate"],
             mode="lines+markers", name=team,
@@ -582,7 +574,6 @@ def tab3_layout():
             marker=dict(size=10),
             hovertemplate=f"<b>{team}</b><br>Season: %{{x}}<br>Win rate: %{{y}}%<extra></extra>",
         ))
-        
     fig2.update_layout(**layout, title="Win Rate Trend of Five Franchises (2000-Present)",
                        xaxis=dict(title="Season", tickangle=45,
                                   tickvals=[str(y) for y in range(2000, 2027, 5)],
@@ -623,7 +614,6 @@ def tab4_layout():
         textfont_size=14,
         hovertemplate="<b>%{y}</b><br>%{x} PPG<extra></extra>",
     ))
-    
     fig1.update_layout(**layout, title="Top 20 Team-Leading Scorer Seasons Since 2000",
                        yaxis=dict(autorange="reversed", **axis_style()),
                        xaxis=dict(title="Avg PPG", **axis_style()),
@@ -636,7 +626,6 @@ def tab4_layout():
         textfont_size=14,
         hovertemplate="<b>%{y}</b><br>%{x} seasons as team's top scorer<extra></extra>",
     ))
-    
     fig2.update_layout(**layout, title="Most Seasons as Team's Top Scorer (≥7 seasons)",
                        yaxis=dict(autorange="reversed", **axis_style()),
                        xaxis=dict(title="Number of Seasons", **axis_style()),
@@ -681,19 +670,16 @@ def tab5_layout():
                        height=800)
 
     fig2 = go.Figure()
-    
     fig2.add_trace(go.Bar(
         name="Previous season", x=df["label"], y=df["prev_avg_points"],
-        marker_color=color_blue,textfont_size=14,
+        marker_color=color_blue, textfont_size=14,
         hovertemplate="<b>%{x}</b><br>Previous: %{y} PPG<extra></extra>",
     ))
-    
     fig2.add_trace(go.Bar(
         name="Improvement season", x=df["label"], y=df["avg_points"],
         marker_color=color_red,
         hovertemplate="<b>%{x}</b><br>After: %{y} PPG<extra></extra>",
     ))
-    
     fig2.update_layout(**layout, barmode="group",
                        title="Before vs After: Scoring Comparison",
                        xaxis=dict(tickangle=45, **axis_style()),
@@ -734,21 +720,16 @@ def tab6_layout():
         text=df["short"], textposition="top center", textfont_size=14,
         hovertemplate="<b>%{text}</b><br>Scored: %{x}<br>Allowed: %{y}<extra></extra>",
     ))
-    
     mn = min(df["avg_points_scored"].min(), df["avg_points_allowed"].min()) - 1
-    
     mx = max(df["avg_points_scored"].max(), df["avg_points_allowed"].max()) + 1
-    
     fig1.add_shape(type="line", x0=mn, y0=mn, x1=mx, y1=mx,
                    line=dict(color=color_gray, dash="dash", width=1))
-    
     fig1.update_layout(**layout, title="Offense vs Defense (Dot Size = Win Rate)",
                        xaxis=dict(title="Avg Points Scored", **axis_style()),
                        yaxis=dict(title="Avg Points Allowed", **axis_style()),
                        height=800)
 
     df_s = df.sort_values("avg_point_diff")
-    
     fig2 = go.Figure(go.Bar(
         x=df_s["avg_point_diff"], y=df_s["short"],
         orientation="h", marker_color=df_s["pos_color"],
@@ -758,9 +739,7 @@ def tab6_layout():
         textfont_size=14,
         hovertemplate="<b>%{y}</b><br>Point diff: %{x}<extra></extra>",
     ))
-    
     fig2.add_vline(x=0, line_color="#333", line_width=1)
-    
     fig2.update_layout(**layout, title="Point Differential & Win Rate (2026 Season)",
                        yaxis=dict(**axis_style()),
                        xaxis=dict(title="Avg Point Differential",
@@ -775,9 +754,7 @@ def tab6_layout():
         text=df["short"], textposition="top center", textfont_size=14,
         hovertemplate="<b>%{text}</b><br>Assists: %{x}<br>Point diff: %{y}<extra></extra>",
     ))
-    
     fig3.add_hline(y=0, line_color=color_gray, line_dash="dash")
-    
     fig3.update_layout(**layout, title="Ball Movement vs Winning (Do Assists Predict Wins?)",
                        xaxis=dict(title="Avg Assists Per Game", **axis_style()),
                        yaxis=dict(title="Avg Point Differential", **axis_style()),
@@ -814,7 +791,7 @@ def tab7_layout():
                    df["losing_team"].str.split().str[-1] + " (" + df["season_year"] + ")")
 
     decade_color = {
-        "1970s": "lilac", "1980s": "dodgerblue", "1990s": "goldenrod",
+        "1970s": "plum", "1980s": "dodgerblue", "1990s": "goldenrod",
         "2000s": "orange", "2010s": "magenta", "2020s": "crimson",
     }
     df["color"] = df["decade"].map(decade_color)
@@ -828,30 +805,25 @@ def tab7_layout():
         showlegend=False,
         hovertemplate="<b>%{y}</b><br>Margin: +%{x}<br>Score: %{customdata[0]}-%{customdata[1]}<br>Decade: %{customdata[2]}<extra></extra>",
     ))
-    
     fig1.update_layout(**layout, title="Top 20 Biggest Blowouts (1970-Present)",
                        yaxis=dict(autorange="reversed", **axis_style()),
                        xaxis=dict(title="Margin of Victory (pts)", **axis_style()),
                        legend=dict(x=1.02, y=1, xanchor="left", yanchor="top", font=dict(size=16)),
                        height=800)
-    
     for decade, color in decade_color.items():
         fig1.add_trace(go.Bar(x=[None], y=[None], name=decade, marker_color=color, showlegend=True))
 
     fig2 = go.Figure()
-    
     fig2.add_trace(go.Bar(
         name="Winning score", x=df["label"], y=df["winning_score"],
         marker_color=color_blue,
         hovertemplate="<b>%{x}</b><br>Winner: %{y}<extra></extra>",
     ))
-    
     fig2.add_trace(go.Bar(
         name="Losing score", x=df["label"], y=df["losing_score"],
         marker_color=color_red,
         hovertemplate="<b>%{x}</b><br>Loser: %{y}<extra></extra>",
     ))
-    
     fig2.update_layout(**layout, barmode="group",
                        title="Winning vs Losing Score",
                        xaxis=dict(tickangle=45, **axis_style()),
