@@ -32,7 +32,7 @@ In terms of data quality issues, I noticed that columns such as position and dra
 
 **Q:** Across 22,000+ players in all seasons of the NBA history, do taller or heavier players score more?
 
-This query began from a through I had to extend the top scorers analysis to the full dataset rather than just the top 10. Players are binned by height (3 in intervals) and weight (20 lb interverals) and average points per game (PPG) is computed per bin.
+This query began from a thought I had to extend the top scorers analysis to the full dataset rather than just the top 10. Players are binned by height (3 in intervals) and weight (20 lb interverals) and average points per game (PPG) is computed per bin.
 
 **A:** Height and weight are surprisingly weak predictors of scoring output. The 87-89 inch bin shows the highest average (12.7 PPG) but contains only 96 players. The core 75-80 inch range, with thousands of players shows no meaningful trend.
 
