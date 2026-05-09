@@ -5,9 +5,19 @@ SQL and Python analysis of NBA game data spanning 1947 to the present. Built as 
 
 **Dataset:** [Historical NBA Data and Player Box Scores](https://www.kaggle.com/datasets/eoinamoore/historical-nba-data-and-player-box-scores) — Kaggle
 
-**Stack:** SQLite, Python, pandas, matplotlib
+**Stack:** SQLite · PostgreSQL (Supabase) · Python · pandas · Plotly Dash · matplotlib
 
 **Database:** 9 tables, ~22,000+ player-seasons across 70+ years of game logs
+
+---
+
+## Dashboard
+
+An interactive version of this analysis is deployed as a Plotly Dash app:
+
+**[Live Dashboard →](https://080c3c03-e9d5-4c45-8888-169af8f75a12.plotly.app)**
+
+The dashboard includes all 7 analyses as interactive tabs with hover tooltips, zoomable charts, and key findings summaries. Built with Plotly Dash and backed by a PostgreSQL database hosted on Supabase.
 
 ---
 
